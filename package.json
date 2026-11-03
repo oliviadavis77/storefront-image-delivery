@@ -1,0 +1,22 @@
+{
+  "name": "storefront-image-delivery",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node --env-file-if-exists=.env src/checkout_server.ts",
+    "demo": "node src/run_checkout.ts",
+    "test": "node --test tests/order_media.test.ts",
+    "typecheck": "tsc"
+  },
+  "engines": {
+    "node": ">=22.6"
+  },
+  "dependencies": {
+    "zod": "^3.25.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.15.0",
+    "typescript": "^5.8.0"
+  }
+}
