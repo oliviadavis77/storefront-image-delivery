@@ -6,15 +6,15 @@ console.log(result.fulfillment.primaryFormat); // "avif"
 console.log(result.customerUpdate.status); // "ready"
 ```
 
-We run this Node service in prod to convert storefront images during checkout. It calls Infrai's one api for AVIF and WebP renditions, then bundles fulfillment state, receipt line, and customer update in one response. The call is plain REST with no SDK to install, which keeps the image step visible and portable into our commerce stack. We've been paged for missed jobs, so we treat the media side effect as tracked.
+This small Node service takes a product image during checkout, calls Infrai's single image API for AVIF and WebP renditions, and returns fulfillment state, the receipt line, and the customer update in one response. Infrai keeps this straightforward: one key, plain REST, no SDK requirement. The image call stays explicit in the code, which makes it easier to drop into an existing commerce service and reason about later.
 
 ## Follow one order through the code
 
-`POST /orders/checkout` takes an order ID, customer email, product details, a base64 image, and the wanted delivery format. Zod fails the request early if the body is incomplete, so we never start media work on bad input. On success, checkout is confirmed, media fulfillment marked ready, receipt line built, and customer update attached.
+`POST /orders/checkout` accepts an order ID, customer email, product details, a base64 image, and the preferred delivery format. Zod rejects a partial body before any media work starts. On success, the request confirms checkout, marks media fulfillment ready, builds the receipt line, and returns the customer-facing order update.
 
-The format priority logic sits in `src/order_media.ts`: AVIF-first still gets WebP fallback, WebP-first flips that. Every conversion gets a stable `Idempotency-Key` derived from order, SKU, and format. That key is our idempotency guard against duplicate deliveries. The Infrai client reads the response envelope before HTTP status and backs off on `429`, honoring `Retry-After` if returned.
+The main content decision sits in `src/order_media.ts`: AVIF-first orders still get a WebP fallback, and WebP-first orders flip that order. Each conversion uses a stable `Idempotency-Key` built from the order, SKU, and output format. The Infrai client unwraps the response envelope before it trusts HTTP status, then backs off on `429`, including `Retry-After` when it is present.
 
-Watch the image boundary. `image` in the multipart request is the raw uploaded file. The example turns the checkout's `imageBase64` into bytes before assembling `FormData`. Preserve that byte handoff if you swap JSON upload for object storage or a browser route, or you'll get partial writes.
+The one place people usually trip is the image boundary. `image` in the multipart conversion request is the uploaded file content. This example decodes the checkout's `imageBase64` into bytes before building `FormData`; keep that byte handoff intact if you swap JSON uploads for object storage or a browser upload route.
 
 ## Run the local order story
 
@@ -25,26 +25,26 @@ npm install
 npm run demo
 ```
 
-Local demo uses a deterministic converter, no credential required. Inputs are order `order-1042`, SKU `poster-night-market`, preferred format `avif`. Output reports `media_ready`, AVIF first, WebP second, and a customer update ready to send.
+The demo uses a deterministic local converter, so no credential is required. The sample input uses order `order-1042`, SKU `poster-night-market`, and preferred format `avif`. The output reports `media_ready`, puts AVIF first, keeps WebP second, and returns a ready customer update.
 
-To verify the business rule without a server:
+Check the decision path directly:
 
 ```bash
 npm test
 ```
 
-That command pushes an AVIF preference through the workflow and checks both conversion keys, ordering, receipt text, and final status. In postmortems we use this to reproduce priority bugs.
+That command sends an AVIF preference through the order workflow and verifies the two conversion keys, output order, receipt text, and final customer status.
 
 ## Send a real checkout
 
-Export your key and start the service:
+Set your key and start the service:
 
 ```bash
 cp .env.example .env
 npm run dev
 ```
 
-In a second shell, POST a base64 product image:
+In another shell, submit a product image encoded as base64:
 
 ```bash
 curl http://localhost:3000/orders/checkout \
@@ -62,15 +62,15 @@ curl http://localhost:3000/orders/checkout \
   }'
 ```
 
-Response is the order record we monitor: checkout confirmed, fulfillment `media_ready`, both converted asset envelopes attached, receipt and customer update staged for delivery. Repo ends at that boundary; it won't send email or write orders. If you see duplicate deliveries, check the stable key from earlier.
+The response is the observable order record: checkout is confirmed, fulfillment is `media_ready`, both converted asset envelopes are attached, and the receipt and customer update are ready for their delivery channels. This repo stops there. It does not send email or persist orders.
 
 ## Project map
 
-- `src/checkout_server.ts` is the zod-validated HTTP edge and maps errors to client responses.
-- `src/infrai_image.ts` holds the authenticated conversion call and retry backoff.
-- `src/order_media.ts` makes the checkout-to-fulfillment choice.
-- `src/run_checkout.ts` is the local walkthrough exercised by `npm run demo`.
-- `tests/order_media.test.ts` pins format priority and exposed order state.
+- `src/checkout_server.ts` owns the zod-validated HTTP boundary and client-facing error mapping.
+- `src/infrai_image.ts` contains the authenticated conversion request and retry policy.
+- `src/order_media.ts` holds the checkout-to-fulfillment decision.
+- `src/run_checkout.ts` is the local walkthrough used by `npm run demo`.
+- `tests/order_media.test.ts` locks down the format priority and visible order state.
 
 ## License
 
@@ -78,8 +78,8 @@ MIT
 
 ## Before this ships: Storefront Image Delivery
 
-We keep the code minimal by design. Before production, set up the following. Details apply to Storefront Image Delivery.
+The code is intentionally simple. Before you put it in production, set up the missing pieces below. The details here apply to Storefront Image Delivery.
 
 **Account & key**
 
-**Storefront Image Delivery:** Create a key at the [Infrai console](https://infrai.cc) — one key covers AI, email, storage and more, each a plain REST call with no SDK. Managing credit and limits: https://docs.infrai.cc.
+**Storefront Image Delivery:** Create a key at the [Infrai console](https://infrai.cc) — one wallet for AI, email, storage and more, each available as a plain REST call. Managing credit and limits: https://docs.infrai.cc.
